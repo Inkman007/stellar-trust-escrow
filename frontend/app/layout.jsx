@@ -23,7 +23,7 @@ import Footer from '../components/layout/Footer';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { CurrencyProvider } from '../contexts/CurrencyContext';
 import ServiceWorkerRegistrar from '../components/ServiceWorkerRegistrar';
-import ErrorBoundary from '../../components/error/ErrorBoundary';
+import ErrorBoundary from '../../components/error
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono' });

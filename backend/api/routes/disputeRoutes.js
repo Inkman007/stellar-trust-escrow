@@ -1,8 +1,10 @@
 import express from 'express';
 import disputeController from '../controllers/disputeController.js';
 import { cacheResponse, invalidateOn, TTL } from '../middleware/cache.js';
+import authMiddleware from '../middleware/auth.js';
 
 const router = express.Router();
+router.use(authMiddleware);
 
 // ── List / Get ────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,7 @@ router.get(
 router.post(
   '/:id/evidence',
   invalidateOn({ tags: (req) => [`dispute:${req.params.id}`, 'disputes'] }),
+  disputeController.uploadEvidence,
   disputeController.postEvidence,
 );
 

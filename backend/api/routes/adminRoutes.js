@@ -10,6 +10,10 @@ import express from 'express';
 const router = express.Router();
 import adminAuth from '../middleware/adminAuth.js';
 import adminController from '../controllers/adminController.js';
+import tenantController from '../controllers/tenantController.js';
+import * as featureFlagController from '../controllers/featureFlagController.js';
+import { getAuditLog, rotateSecrets } from '../../lib/secrets.js';
+import cache from '../../lib/cache.js';
 
 // Apply admin authentication to all routes in this file
 router.use(adminAuth);
@@ -106,10 +110,18 @@ router.patch('/rate-limits/:tier', adminController.updateRateLimit);
  */
 router.get('/rate-limits/usage/:userId', adminController.getUserRateLimitUsage);
 
-export default router;
+// ── Tenants ───────────────────────────────────────────────────────────────────
+router.get('/tenants', tenantController.listTenants);
+router.post('/tenants', tenantController.createTenant);
+router.get('/tenants/:tenantId', tenantController.getTenant);
+router.patch('/tenants/:tenantId', tenantController.updateTenant);
+router.get('/tenants/:tenantId/metrics', tenantController.getTenantMetrics);
 
-// ── Secrets Management ─────────────────────────────────────────────────────────
-import { getAuditLog, rotateSecrets } from '../../lib/secrets.js';
+// ── Feature Flags ─────────────────────────────────────────────────────────────
+router.get('/flags', featureFlagController.index);
+router.post('/flags', featureFlagController.create);
+router.patch('/flags/:key', featureFlagController.update);
+router.delete('/flags/:key', featureFlagController.destroy);
 
 /**
  * @route  GET /api/admin/secrets/audit
@@ -133,9 +145,6 @@ router.post('/secrets/rotate', async (_req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ── Cache Management ───────────────────────────────────────────────────────────
-import cache from '../../lib/cache.js';
 
 /**
  * @route  GET /api/admin/cache/stats
@@ -171,3 +180,5 @@ router.delete('/cache', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+export default router;

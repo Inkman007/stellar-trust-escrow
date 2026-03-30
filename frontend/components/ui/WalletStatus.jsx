@@ -16,8 +16,11 @@
  */
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Button from './Button';
+import Modal from './Modal';
 import Spinner from './Spinner';
+import { truncateAddress } from '../../lib/truncateAddress';
 import { useI18n } from '../../i18n/index.jsx';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -115,6 +118,14 @@ export default function WalletStatus({ wallet }) {
   const { isConnected, isConnecting, isFreighterInstalled, address, connect, disconnect, error } =
     wallet;
   const { t } = useI18n();
+  const router = useRouter();
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleDisconnect = () => {
+    disconnect();
+    setShowConfirm(false);
+    router.push('/');
+  };
 
   // Not installed — prompt installation
   if (!isFreighterInstalled) {
@@ -148,7 +159,7 @@ export default function WalletStatus({ wallet }) {
   if (isConnected && address) {
     return (
       <div className="flex items-center gap-2">
-        <StatusDot status="connected" />
+        <Avatar address={address} size="sm" className="rounded-full" />
         <AddressWithTooltip address={address} />
         <Button id="wallet-disconnect-btn" variant="secondary" size="sm" onClick={disconnect}>
           {t('wallet.disconnect')}

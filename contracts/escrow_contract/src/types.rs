@@ -32,17 +32,83 @@ pub enum MilestoneStatus {
     Pending,
     /// Freelancer has submitted work for this milestone.
     Submitted,
-    /// Client has approved the milestone. Funds have been released.
+    /// Client has approved the milestone and funds are pending release.
     Approved,
+    /// Funds have been released for this milestone.
+    Released,
     /// Client rejected the submission. Freelancer should resubmit.
     Rejected,
     /// A dispute has been raised on this milestone. Funds are frozen.
     Disputed,
 }
 
+/// Timelock metadata for protecting buyers: no release until expiry.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Timelock {
+    /// Duration in ledger timestamps (seconds) to wait after start.
+    pub duration_ledger: u64,
+    /// Ledger timestamp when timelock started.
+    pub start_ledger: u64,
+}
+
+/// Optional timelock wrapper — used in `EscrowState` to avoid `Option<Timelock>`
+/// which does not satisfy `ScVal: TryFrom<&Option<Timelock>>` in test mode.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OptionalTimelock {
+    None,
+    Some(Timelock),
+}
+
+impl From<Option<Timelock>> for OptionalTimelock {
+    fn from(opt: Option<Timelock>) -> Self {
+        match opt {
+            Some(t) => OptionalTimelock::Some(t),
+            None => OptionalTimelock::None,
+        }
+    }
+}
+
+impl From<OptionalTimelock> for Option<Timelock> {
+    fn from(opt: OptionalTimelock) -> Self {
+        match opt {
+            OptionalTimelock::Some(t) => Some(t),
+            OptionalTimelock::None => None,
+        }
+    }
+}
+
+/// Supported recurring payment intervals.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecurringInterval {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+/// Single approval by a buyer signer, recorded with timestamp.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApprovalRecord {
+    pub signer: Address,
+    pub approved_at: u64,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STRUCTS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Multisig policy for milestone approve/reject. Empty `approvers` disables multisig
+/// (only `client` may approve/reject, legacy behaviour).
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct MultisigConfig {
+    pub approvers: soroban_sdk::Vec<Address>,
+    pub weights: soroban_sdk::Vec<u32>,
+    pub threshold: u32,
+}
 
 /// A single milestone within an escrow agreement.
 ///
@@ -75,6 +141,50 @@ pub struct Milestone {
 
     /// Ledger timestamp when the client approved or rejected.
     pub resolved_at: Option<u64>,
+
+    /// Buyer approvals for this milestone (signer + timestamp).
+    pub approvals: soroban_sdk::Vec<ApprovalRecord>,
+}
+
+/// Configuration for a recurring/subscription escrow.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecurringPaymentConfig {
+    /// Payment interval cadence.
+    pub interval: RecurringInterval,
+
+    /// Amount released each time a payment becomes due.
+    pub payment_amount: i128,
+
+    /// Timestamp of the first scheduled payment.
+    pub start_time: u64,
+
+    /// Timestamp when the next payment becomes due.
+    pub next_payment_at: u64,
+
+    /// Optional schedule end date.
+    pub end_date: Option<u64>,
+
+    /// Total number of scheduled payments for this escrow.
+    pub total_payments: u32,
+
+    /// Remaining scheduled payments not yet released.
+    pub payments_remaining: u32,
+
+    /// Number of payments already processed.
+    pub processed_payments: u32,
+
+    /// Whether scheduled releases are currently paused.
+    pub paused: bool,
+
+    /// Whether the recurring schedule has been cancelled.
+    pub cancelled: bool,
+
+    /// Optional timestamp when the schedule was paused.
+    pub paused_at: Option<u64>,
+
+    /// Optional timestamp of the most recent processed payment.
+    pub last_payment_at: Option<u64>,
 }
 
 /// The main escrow agreement.
@@ -115,6 +225,10 @@ pub struct EscrowState {
     /// TODO (contributor): implement arbiter selection and staking
     pub arbiter: Option<Address>,
 
+    /// Addresses authorised to approve milestone releases (multi-sig).
+    /// The 2-of-N threshold velocity is used for milestone approval.
+    pub buyer_signers: soroban_sdk::Vec<Address>,
+
     /// Ledger timestamp of escrow creation.
     pub created_at: u64,
 
@@ -131,8 +245,20 @@ pub struct EscrowState {
     /// Can be used to extend the lock_time if needed.
     pub lock_time_extension: Option<u64>,
 
+    /// Optional timelock payload for buyer remorse protection.
+    pub timelock: OptionalTimelock,
+
     /// IPFS hash of the full project brief / agreement document.
     pub brief_hash: BytesN<32>,
+
+    /// Multisig approvers (empty = legacy mode: only `client` may approve/reject milestones).
+    pub multisig_approvers: soroban_sdk::Vec<Address>,
+
+    /// Weight per approver (same length as `multisig_approvers` when multisig is used).
+    pub multisig_weights: soroban_sdk::Vec<u32>,
+
+    /// Minimum sum of weights required to approve a submitted milestone.
+    pub multisig_threshold: u32,
 }
 
 /// On-chain reputation record for a user address.
@@ -288,4 +414,12 @@ pub enum DataKey {
     CancellationRequest(u64),
     /// Slash record by escrow ID — key: u64, value: SlashRecord
     SlashRecord(u64),
+    /// Recurring payment config by escrow ID — key: u64, value: RecurringPaymentConfig
+    RecurringConfig(u64),
+    /// Primary oracle contract address — value: Address
+    OracleAddress,
+    /// Fallback oracle contract address — value: Address
+    FallbackOracleAddress,
+    /// Wormhole token bridge contract address — value: Address
+    WormholeBridge,
 }

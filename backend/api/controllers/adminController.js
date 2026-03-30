@@ -80,6 +80,7 @@ const listUsers = async (req, res) => {
     await cache.set(cacheKey, result, 30);
     res.json(result);
   } catch (err) {
+    logControllerError('admin.listUsers', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -116,6 +117,7 @@ const getUserDetail = async (req, res) => {
     await cache.set(cacheKey, result, 60);
     res.json(result);
   } catch (err) {
+    logControllerError('admin.getUserDetail', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -157,6 +159,7 @@ const suspendUser = async (req, res) => {
     await cache.invalidatePrefix(`admin:user:${address}`);
     res.json({ message: `User ${address} suspended.`, auditEntry: result });
   } catch (err) {
+    logControllerError('admin.suspendUser', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -198,6 +201,7 @@ const banUser = async (req, res) => {
     await cache.invalidatePrefix(`admin:user:${address}`);
     res.json({ message: `User ${address} banned.`, auditEntry: result });
   } catch (err) {
+    logControllerError('admin.banUser', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -248,6 +252,7 @@ const listDisputes = async (req, res) => {
     await cache.set(cacheKey, result, 15);
     res.json(result);
   } catch (err) {
+    logControllerError('admin.listDisputes', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -262,6 +267,7 @@ const resolveDispute = async (req, res) => {
   try {
     const { id } = req.params;
     const { clientAmount, freelancerAmount, notes = '' } = req.body;
+    const tenantId = req.tenant?.id;
 
     if (clientAmount === undefined || freelancerAmount === undefined) {
       return res.status(400).json({ error: 'clientAmount and freelancerAmount are required.' });
@@ -271,17 +277,17 @@ const resolveDispute = async (req, res) => {
 
     // Single transaction: read → validate → update → audit log
     const result = await prisma.$transaction(async (tx) => {
-      const dispute = await tx.dispute.findUnique({
-        where: { id: disputeId },
+      const dispute = await tx.dispute.findFirst({
+        where: { id: disputeId, ...(tenantId ? { tenantId } : {}) },
         select: { id: true, escrowId: true, resolvedAt: true },
       });
 
       if (!dispute) return { error: 'Dispute not found.', status: 404 };
       if (dispute.resolvedAt) return { error: 'Dispute already resolved.', status: 409 };
 
-      const [updated] = await Promise.all([
-        tx.dispute.update({
-          where: { id: disputeId },
+      await Promise.all([
+        tx.dispute.updateMany({
+          where: { id: disputeId, ...(tenantId ? { tenantId } : {}) },
           data: {
             resolvedAt: new Date(),
             clientAmount: String(clientAmount),
@@ -300,6 +306,10 @@ const resolveDispute = async (req, res) => {
         }),
       ]);
 
+      const updated = await tx.dispute.findFirst({
+        where: { id: disputeId, ...(tenantId ? { tenantId } : {}) },
+      });
+
       return { dispute: updated };
     });
 
@@ -311,6 +321,7 @@ const resolveDispute = async (req, res) => {
     await cache.invalidatePrefix('admin:disputes');
     res.json({ message: 'Dispute resolved.', dispute: result.dispute });
   } catch (err) {
+    logControllerError('admin.resolveDispute', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -362,6 +373,7 @@ const getStats = async (req, res) => {
     await cache.set(cacheKey, result, 30);
     res.json(result);
   } catch (err) {
+    logControllerError('admin.getStats', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -393,6 +405,7 @@ const getAuditLogs = async (req, res) => {
     await cache.set(cacheKey, result, 15);
     res.json(result);
   } catch (err) {
+    logControllerError('admin.getAuditLogs', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -413,6 +426,7 @@ const getSettings = async (req, res) => {
       allowedOrigins: process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
     });
   } catch (err) {
+    logControllerError('admin.getSettings', err, req);
     res.status(500).json({ error: err.message });
   }
 };
@@ -442,6 +456,7 @@ const updateSettings = async (req, res) => {
       received: req.body,
     });
   } catch (err) {
+    logControllerError('admin.updateSettings', err, req);
     res.status(500).json({ error: err.message });
   }
 };
